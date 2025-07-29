@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+  h2:
+    console:
+      enabled: true
+
+kite:
+  api:
+    key: 4u07o35o6w5uhd2r
+    secret: n4ex6pjf9ldhtpngrsyzqhjbgyi8tgtt
+    base-url: https://api.kite.trade
+    login-url: https://kite.zerodha.com/connect/login
+
+trading:
+  strategy:
+    max-daily-loss: 3000
+    profit-target: 30
+    stop-loss: 15
+    interval-minutes: 5
+    trading-start: "09:15"
+    trading-end: "15:30"
+  paper:
+    enabled: true
