@@ -4,7 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.KiteConfig;
 import com.tradingbot.dto.AccountInfo;
+import com.tradingbot.dto.NfoInstrument;
 import com.tradingbot.dto.PaperTrade;
+import com.zerodhatech.kiteconnect.KiteConnect;
+import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
+import com.zerodhatech.models.Tick;
+import com.zerodhatech.ticker.KiteTicker;
+import com.zerodhatech.ticker.OnConnect;
+import com.zerodhatech.ticker.OnDisconnect;
+import com.zerodhatech.ticker.OnTicks;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -40,6 +48,9 @@ public class KiteService {
     @Value("${trading.paper.enabled:false}")
     private boolean paperTradingEnabled;
 
+    @Autowired
+    KiteTickerService kiteTickerService;
+
     private String accessToken;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final CloseableHttpClient httpClient = HttpClients.createDefault();
@@ -70,6 +81,7 @@ public class KiteService {
             if (jsonResponse.has("data")) {
                 this.accessToken = jsonResponse.get("data").get("access_token").asText();
                 logger.info("Access token generated successfully : "+this.accessToken);
+                kiteTickerService.connect(kiteConfig.getKey(), this.accessToken);
                 return true;
             }
         } catch (Exception e) {
@@ -309,7 +321,7 @@ public class KiteService {
         return accessToken != null && !accessToken.isEmpty();
     }
 
-    public List<String> getATMStraddleSymbols() {
+    public List<NfoInstrument> getATMStraddleSymbols() {
         log.info("getATMStraddleSymbols()");
         try {
             // Get current BankNifty price
@@ -324,25 +336,30 @@ public class KiteService {
             int atmStrike = calculateATMStrike(currentPrice);
 
             // Get current expiry from NSE data
-            String expiry = getCurrentBankNiftyExpiry();
-            log.info("Banknifty current expiry : "+expiry);
-            if (expiry == null) {
+            String nfoData = getCurrentBankNiftyExpiry();
+
+            log.info("Banknifty current expiry : "+nfoData);
+            if (nfoData == null) {
                 logger.error("Failed to fetch current expiry");
                 return Collections.emptyList();
             }
 
             // Build symbols
-            List<String> symbols = new ArrayList<>();
-            String ceSymbol = "BANKNIFTY" + expiry + atmStrike + "CE";
-            String peSymbol = "BANKNIFTY" + expiry + atmStrike + "PE";
-            log.info("ceSymbol : "+ceSymbol);
-            log.info("peSymbol : "+peSymbol);
+            List<NfoInstrument> symbols = new ArrayList<>();
+//            String ceSymbol = "BANKNIFTY" + nfoData + atmStrike + "CE";
+            NfoInstrument nfoInstrumentCE = getInstrument(nfoData,atmStrike,"CE");
+//            String peSymbol = "BANKNIFTY" + nfoData + atmStrike + "PE";
+            NfoInstrument nfoInstrumentPE = getInstrument(nfoData,atmStrike,"PE");
+            assert nfoInstrumentCE != null;
+            log.info("ceSymbol : "+nfoInstrumentCE.getTradingsymbol());
+            assert nfoInstrumentPE != null;
+            log.info("peSymbol : "+nfoInstrumentPE.getTradingsymbol());
 
-            symbols.add(ceSymbol);
-            symbols.add(peSymbol);
+            symbols.add(nfoInstrumentCE);
+            symbols.add(nfoInstrumentPE);
 
             logger.info("Generated ATM straddle symbols: CE={}, PE={} for strike={}",
-                    ceSymbol, peSymbol, atmStrike);
+                    nfoInstrumentCE.getTradingsymbol(), nfoInstrumentPE.getTradingsymbol(), atmStrike);
 
             return symbols;
 
@@ -350,6 +367,34 @@ public class KiteService {
             logger.error("Error generating ATM straddle symbols", e);
             return Collections.emptyList();
         }
+    }
+
+    private NfoInstrument getInstrument(String nfoData, int atmStrike, String instrumentType) {
+        String[] fields = nfoData.split(",");
+        String expiry = fields[5];
+        List<NfoInstrument> nfoInstruments = new ArrayList<>();
+        for (Map.Entry<String, LocalDate> entry : bankNiftyExpiries.entrySet()) {
+            String[] fields1 = entry.getKey().split(",");
+            if (fields1.length > 10 && fields1[2].startsWith("BANKNIFTY") &&
+                    fields1[9].equals(instrumentType) && fields1[5].equals(expiry) &&
+                    Integer.parseInt(fields1[6]) == atmStrike) {
+                NfoInstrument nfoInstrument = new NfoInstrument();
+                nfoInstrument.setInstrument_token(fields1[0]);
+                nfoInstrument.setExchange_token(fields1[1]);
+                nfoInstrument.setTradingsymbol(fields1[2]);
+                nfoInstrument.setName(fields1[3]);
+                nfoInstrument.setLast_price(fields1[4]);
+                nfoInstrument.setExpiry(fields1[5]);
+                nfoInstrument.setStrike(fields1[6]);
+                nfoInstrument.setTick_size(fields1[7]);
+                nfoInstrument.setLot_size(fields1[8]);
+                nfoInstrument.setInstrument_type(fields1[9]);
+                nfoInstrument.setSegment(fields1[10]);
+                nfoInstrument.setExchange(fields1[11]);
+                return nfoInstrument;
+            }
+        }
+        return null;
     }
 
     public BigDecimal getBankNiftyPrice() {
@@ -427,6 +472,7 @@ public class KiteService {
                     String formattedExpiry = expiry.format(formatter).toUpperCase();
 
                     bankNiftyExpiries.put(formattedExpiry, expiry);
+                    bankNiftyExpiries.put(line, expiry);
                 }
             }
 

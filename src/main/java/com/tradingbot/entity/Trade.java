@@ -20,6 +20,7 @@ public class Trade {
     private LocalDateTime timestamp;
     private String orderId;
     private String strategy;
+    private String instrumentToken;
 
     // Constructors
     public Trade() {}
@@ -56,4 +57,12 @@ public class Trade {
     public void setOrderId(String orderId) { this.orderId = orderId; }
     public String getStrategy() { return strategy; }
     public void setStrategy(String strategy) { this.strategy = strategy; }
+
+    public String getInstrumentToken() {
+        return instrumentToken;
+    }
+
+    public void setInstrumentToken(String instrumentToken) {
+        this.instrumentToken = instrumentToken;
+    }
 }

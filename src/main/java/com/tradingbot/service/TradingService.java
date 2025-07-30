@@ -1,7 +1,10 @@
 package com.tradingbot.service;
 
+import com.tradingbot.dto.NfoInstrument;
+import com.tradingbot.dto.PriceTick;
 import com.tradingbot.entity.DailyPnL;
 import com.tradingbot.entity.Trade;
+import com.tradingbot.event.PriceTickEvent;
 import com.tradingbot.repository.DailyPnLRepository;
 import com.tradingbot.repository.TradeRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -33,9 +37,6 @@ public class TradingService {
     @Autowired
     private DailyPnLRepository dailyPnLRepository;
 
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
-
     @Value("${trading.strategy.max-daily-loss}")
     private BigDecimal maxDailyLoss;
 
@@ -47,18 +48,18 @@ public class TradingService {
 
     private boolean tradingActive = false;
 
-    //@Scheduled(cron = "0 */5 9-15 * * MON-FRI") // Every 5 minutes during trading hours
+    @Autowired
+    KiteTickerService kiteTickerService;
+
+    @Scheduled(cron = "0 */5 9-15 * * MON-FRI") // Every 5 minutes during trading hours
     public void executeStraddleStrategy() {
-//        if (!isTradingTime() || !kiteService.isAccessTokenValid() || isTradingStopped()) {
-//            return;
-//        }
+        if (!isTradingTime() || !kiteService.isAccessTokenValid() || isTradingStopped()) {
+            return;
+        }
 
         logger.info("Executing straddle strategy...");
 
         try {
-            // Close existing positions if profit/loss conditions are met
-            checkAndClosePositions();
-
             // Place new straddle if no active positions
             if (getActivePositions().isEmpty()) {
                 placeNewStraddle();
@@ -70,14 +71,14 @@ public class TradingService {
 
     private void placeNewStraddle() {
         log.info("placeNewStraddle()");
-        List<String> symbols = kiteService.getATMStraddleSymbols();
+        List<NfoInstrument> symbols = kiteService.getATMStraddleSymbols();
         if (symbols.size() != 2) {
             logger.error("Unable to get ATM straddle symbols");
             return;
         }
 
-        String ceSymbol = symbols.get(0);
-        String peSymbol = symbols.get(1);
+        String ceSymbol = symbols.get(0).getTradingsymbol();
+        String peSymbol = symbols.get(1).getTradingsymbol();
 
         // Get current prices
         BigDecimal cePrice = kiteService.getLastPrice(ceSymbol);
@@ -94,25 +95,91 @@ public class TradingService {
                 // Save trades to database
                 Trade ceTrade = new Trade(ceSymbol, "BUY", 25, cePrice, "STRADDLE");
                 ceTrade.setOrderId(ceOrderId);
+                ceTrade.setInstrumentToken(symbols.get(0).getInstrument_token());
                 Trade peTrade = new Trade(peSymbol, "BUY", 25, pePrice, "STRADDLE");
                 peTrade.setOrderId(peOrderId);
+                peTrade.setInstrumentToken(symbols.get(1).getInstrument_token());
 
                 tradeRepository.save(ceTrade);
                 tradeRepository.save(peTrade);
 
                 logger.info("Placed straddle: CE {} at {}, PE {} at {}", ceSymbol, cePrice, peSymbol, pePrice);
-
-                // Send update via WebSocket
-                messagingTemplate.convertAndSend("/topic/trades", "New straddle placed");
+                List<Long> tokens = new ArrayList<>();
+                tokens.add(Long.valueOf(symbols.get(0).getInstrument_token()));
+                tokens.add(Long.valueOf(symbols.get(1).getInstrument_token()));
+                kiteTickerService.subscribe(tokens);
             }
         }
     }
 
-    private void checkAndClosePositions() {
+    @EventListener
+    public void handlePriceTickEvent(PriceTickEvent event) {
+        PriceTick tick = event.getPriceTick();
+        //log.info("Processing tick for token {}: LTP = {}", tick.getInstrumentToken(), tick.getLastTradedPrice());
+        try {
+            checkAndClosePositions(tick);
+        } catch (Exception e) {
+            log.error("Error processing tick for token {}: {}", tick.getInstrumentToken(), e.getMessage(), e);
+        }
+    }
+
+    void checkAndClosePositions(PriceTick tick) {
+        List<Trade> activeTrades = getActivePositions();
+        if (activeTrades.isEmpty()) {
+            return;
+        }
+
+        for (Trade trade : activeTrades) {
+            // *** BUG FIX ***
+            // The logic is corrected to process the trade that MATCHES the incoming tick.
+            if (Long.parseLong(trade.getInstrumentToken()) != tick.getInstrumentToken()) {
+                continue; // Skip trades that don't match this tick.
+            }
+
+            BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
+            BigDecimal priceDiff = currentPrice.subtract(trade.getPrice());
+
+            boolean shouldClose = false;
+
+            // Check profit target
+            if (priceDiff.compareTo(profitTarget) >= 0) {
+                shouldClose = true;
+                logger.info("Profit target hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
+            }
+            // Check stop loss
+            if (priceDiff.compareTo(stopLoss.negate()) <= 0) {
+                shouldClose = true;
+                logger.info("Stop loss hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
+            }
+
+            if (shouldClose) {
+                String orderId = kiteService.placeOrder(trade.getSymbol(), "SELL", trade.getQuantity(), "MARKET", currentPrice);
+                if (orderId != null) {
+                    trade.setStatus("CLOSED");
+                    trade.setPnl(priceDiff.multiply(new BigDecimal(trade.getQuantity())));
+                    tradeRepository.save(trade);
+
+                    updateDailyPnL(trade.getPnl());
+
+                    // Close the other leg of straddle
+                    closeOtherLeg(trade);
+
+                    // Since we've processed the trade for this tick, we can stop iterating.
+                    break;
+                }
+            }
+        }
+    }
+
+    /*void checkAndClosePositions(PriceTick tick) {
+        log.info("checkAndClosePositions()");
         List<Trade> activeTrades = getActivePositions();
 
         for (Trade trade : activeTrades) {
-            BigDecimal currentPrice = kiteService.getLastPrice(trade.getSymbol());
+            if (Long.parseLong(trade.getInstrumentToken())==(tick.getInstrumentToken())) {
+                continue; // Skip trades that don't match the tick
+            }
+            BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
             BigDecimal priceDiff = currentPrice.subtract(trade.getPrice());
 
             boolean shouldClose = false;
@@ -143,7 +210,7 @@ public class TradingService {
                 }
             }
         }
-    }
+    }*/
 
     private void closeOtherLeg(Trade closedTrade) {
         List<Trade> activeTrades = tradeRepository.findByStrategyAndStatus("STRADDLE", "OPEN");
@@ -202,9 +269,6 @@ public class TradingService {
         }
 
         dailyPnLRepository.save(dailyPnL);
-
-        // Send update via WebSocket
-        messagingTemplate.convertAndSend("/topic/pnl", dailyPnL);
     }
 
     public void startTrading() {

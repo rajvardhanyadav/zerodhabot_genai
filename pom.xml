@@ -61,6 +61,15 @@
             <artifactId>commons-codec</artifactId>
             <version>1.16.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zerodhatech.kiteconnect</groupId>
+            <artifactId>kiteconnect</artifactId>
+            <version>3.5.0</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
