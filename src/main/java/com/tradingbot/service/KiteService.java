@@ -6,13 +6,6 @@ import com.tradingbot.config.KiteConfig;
 import com.tradingbot.dto.AccountInfo;
 import com.tradingbot.dto.NfoInstrument;
 import com.tradingbot.dto.PaperTrade;
-import com.zerodhatech.kiteconnect.KiteConnect;
-import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
-import com.zerodhatech.models.Tick;
-import com.zerodhatech.ticker.KiteTicker;
-import com.zerodhatech.ticker.OnConnect;
-import com.zerodhatech.ticker.OnDisconnect;
-import com.zerodhatech.ticker.OnTicks;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -31,10 +24,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.time.LocalDate;
-import java.time.DayOfWeek;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAdjusters;
-import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -80,7 +69,7 @@ public class KiteService {
             JsonNode jsonResponse = objectMapper.readTree(response);
             if (jsonResponse.has("data")) {
                 this.accessToken = jsonResponse.get("data").get("access_token").asText();
-                logger.info("Access token generated successfully : "+this.accessToken);
+                logger.info("Access token generated successfully : " + this.accessToken);
                 kiteTickerService.connect(kiteConfig.getKey(), this.accessToken);
                 return true;
             }
@@ -103,7 +92,7 @@ public class KiteService {
             log.info(response);
             JsonNode jsonResponse = objectMapper.readTree(response);
             if (jsonResponse.has("data")) {
-                log.info("jsonResponse : "+jsonResponse.asText());
+                log.info("jsonResponse : " + jsonResponse.asText());
                 JsonNode data = jsonResponse.get("data").get("equity");
                 AccountInfo accountInfo = new AccountInfo();
                 accountInfo.setAvailableMargin(new BigDecimal(data.get("available").get("live_balance").asText()));
@@ -153,7 +142,7 @@ public class KiteService {
                 return new String(httpResponse.getEntity().getContent().readAllBytes());
             });
 
-            log.info("Real order response : "+response);
+            log.info("Real order response : " + response);
 
             JsonNode jsonResponse = objectMapper.readTree(response);
             if (jsonResponse.has("data")) {
@@ -321,12 +310,12 @@ public class KiteService {
         return accessToken != null && !accessToken.isEmpty();
     }
 
-    public List<NfoInstrument> getATMStraddleSymbols() {
+    public List<NfoInstrument> getATMStraddleSymbols(LocalDate selectedExpiryDate) {
         log.info("getATMStraddleSymbols()");
         try {
             // Get current BankNifty price
             BigDecimal currentPrice = getBankNiftyPrice();
-            log.info("Banknifty currentPrice : "+currentPrice);
+            log.info("Banknifty currentPrice : " + currentPrice);
             if (currentPrice.equals(BigDecimal.ZERO)) {
                 logger.error("Failed to fetch BankNifty price");
                 return Collections.emptyList();
@@ -338,7 +327,7 @@ public class KiteService {
             // Get current expiry from NSE data
             String nfoData = getCurrentBankNiftyExpiry();
 
-            log.info("Banknifty current expiry : "+nfoData);
+//            log.info("Banknifty current expiry : " + nfoData);
             if (nfoData == null) {
                 logger.error("Failed to fetch current expiry");
                 return Collections.emptyList();
@@ -347,13 +336,13 @@ public class KiteService {
             // Build symbols
             List<NfoInstrument> symbols = new ArrayList<>();
 //            String ceSymbol = "BANKNIFTY" + nfoData + atmStrike + "CE";
-            NfoInstrument nfoInstrumentCE = getInstrument(nfoData,atmStrike,"CE");
+            NfoInstrument nfoInstrumentCE = getInstrument(nfoData, atmStrike, "CE",selectedExpiryDate);
 //            String peSymbol = "BANKNIFTY" + nfoData + atmStrike + "PE";
-            NfoInstrument nfoInstrumentPE = getInstrument(nfoData,atmStrike,"PE");
+            NfoInstrument nfoInstrumentPE = getInstrument(nfoData, atmStrike, "PE",selectedExpiryDate);
             assert nfoInstrumentCE != null;
-            log.info("ceSymbol : "+nfoInstrumentCE.getTradingsymbol());
+            log.info("ceSymbol : " + nfoInstrumentCE.getTradingsymbol());
             assert nfoInstrumentPE != null;
-            log.info("peSymbol : "+nfoInstrumentPE.getTradingsymbol());
+            log.info("peSymbol : " + nfoInstrumentPE.getTradingsymbol());
 
             symbols.add(nfoInstrumentCE);
             symbols.add(nfoInstrumentPE);
@@ -369,14 +358,14 @@ public class KiteService {
         }
     }
 
-    private NfoInstrument getInstrument(String nfoData, int atmStrike, String instrumentType) {
-        String[] fields = nfoData.split(",");
-        String expiry = fields[5];
+    private NfoInstrument getInstrument(String nfoData, int atmStrike, String instrumentType, LocalDate selectedExpiryDate) {
+        //String[] fields = nfoData.split(",");
+        //String expiry = fields[5];
         List<NfoInstrument> nfoInstruments = new ArrayList<>();
         for (Map.Entry<String, LocalDate> entry : bankNiftyExpiries.entrySet()) {
             String[] fields1 = entry.getKey().split(",");
             if (fields1.length > 10 && fields1[2].startsWith("BANKNIFTY") &&
-                    fields1[9].equals(instrumentType) && fields1[5].equals(expiry) &&
+                    fields1[9].equals(instrumentType) && LocalDate.parse(fields1[5]).isEqual(selectedExpiryDate) &&
                     Integer.parseInt(fields1[6]) == atmStrike) {
                 NfoInstrument nfoInstrument = new NfoInstrument();
                 nfoInstrument.setInstrument_token(fields1[0]);
@@ -401,7 +390,7 @@ public class KiteService {
         try {
             HttpGet get = new HttpGet(kiteConfig.getBaseUrl() + "/quote/ltp?i=NSE:NIFTY%20BANK");
             get.setHeader("Authorization", "token " + kiteConfig.getKey() + ":" + accessToken);
-            get.setHeader("X-Kite-Version","3");
+            get.setHeader("X-Kite-Version", "3");
 
             String response = httpClient.execute(get, httpResponse -> {
                 return new String(httpResponse.getEntity().getContent().readAllBytes());
@@ -423,7 +412,7 @@ public class KiteService {
         int strike = currentPrice.divide(new BigDecimal(100), 0, BigDecimal.ROUND_HALF_UP)
                 .multiply(new BigDecimal(100))
                 .intValue();
-        log.info("ATM strike price : "+strike);
+        log.info("ATM strike price : " + strike);
         return strike;
     }
 
@@ -468,10 +457,6 @@ public class KiteService {
                         (fields[9].equals("CE") || fields[9].equals("PE"))) {
 
                     LocalDate expiry = LocalDate.parse(fields[5]);
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyMMM", Locale.ENGLISH);
-                    String formattedExpiry = expiry.format(formatter).toUpperCase();
-
-                    bankNiftyExpiries.put(formattedExpiry, expiry);
                     bankNiftyExpiries.put(line, expiry);
                 }
             }
@@ -482,5 +467,38 @@ public class KiteService {
         } catch (Exception e) {
             logger.error("Error refreshing expiry data", e);
         }
+    }
+
+    public List<LocalDate> getUpcomingExpiryDates(int i) {
+        Map<String, LocalDate> expiryDates = new HashMap<>();
+        try {
+            HttpGet get = new HttpGet(kiteConfig.getBaseUrl() + "/instruments/NFO");
+            get.setHeader("Authorization", "token " + kiteConfig.getKey() + ":" + accessToken);
+
+            String response = httpClient.execute(get, httpResponse -> {
+                return new String(httpResponse.getEntity().getContent().readAllBytes());
+            });
+            String[] lines = response.split("\n");
+            log.info("Total line : "+lines.length);
+            for (String line : lines) {
+                String[] fields = line.split(",");
+                if (fields.length > 10 && fields[2].startsWith("BANKNIFTY")){
+                    expiryDates.put(fields[5], LocalDate.parse(fields[5]));
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error refreshing expiry data", e);
+        }
+        log.info("expiryDates() : " + expiryDates.size());
+        List<LocalDate> upcomingExpiries = new ArrayList<>();
+        for (Map.Entry<String, LocalDate> entry : expiryDates.entrySet()) {
+            String key = entry.getKey();
+            LocalDate expiryDate = entry.getValue();
+            if (expiryDate.isAfter(LocalDate.now())) {
+                    upcomingExpiries.add(expiryDate);
+            }
+        }
+        log.info("upcomingExpiries() : " + upcomingExpiries.size());
+        return upcomingExpiries;
     }
 }

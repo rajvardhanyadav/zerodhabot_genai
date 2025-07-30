@@ -1,6 +1,7 @@
 package com.tradingbot.controller;
 
 import com.tradingbot.dto.AccountInfo;
+import com.tradingbot.dto.TradingConfigDto;
 import com.tradingbot.entity.Trade;
 import com.tradingbot.repository.TradeRepository;
 import com.tradingbot.service.KiteService;
@@ -11,8 +12,10 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Slf4j
@@ -45,14 +48,15 @@ public class DashboardController {
         model.addAttribute("recentTrades", recentTrades);
         model.addAttribute("todaysPnL", tradingService.getTodaysPnL());
         model.addAttribute("tradingActive", tradingService.isTradingActive());
-
+        List<LocalDate> expiryDates = kiteService.getUpcomingExpiryDates(3); // Get next 3
+        model.addAttribute("expiryDates", expiryDates);
         return "dashboard";
     }
 
     @PostMapping("/start-trading")
     @ResponseBody
-    public String startTrading() {
-        tradingService.startTrading();
+    public String startTrading(@RequestBody TradingConfigDto config) {
+        tradingService.startTrading(config);
         return "Trading started";
     }
 

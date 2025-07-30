@@ -2,6 +2,7 @@ package com.tradingbot.service;
 
 import com.tradingbot.dto.NfoInstrument;
 import com.tradingbot.dto.PriceTick;
+import com.tradingbot.dto.TradingConfigDto;
 import com.tradingbot.entity.DailyPnL;
 import com.tradingbot.entity.Trade;
 import com.tradingbot.event.PriceTickEvent;
@@ -13,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -46,6 +46,8 @@ public class TradingService {
     @Value("${trading.strategy.stop-loss}")
     private BigDecimal stopLoss;
 
+    private LocalDate selectedExpiryDate;
+
     private boolean tradingActive = false;
 
     @Autowired
@@ -55,7 +57,7 @@ public class TradingService {
 
     // No changes in this section (executeStraddleStrategy, placeNewStraddle)
     // The constructor for Trade already handles setting the entryPrice.
-    @Scheduled(cron = "0 */5 9-15 * * MON-FRI")
+    //@Scheduled(cron = "0 */5 9-15 * * MON-FRI")
     public void executeStraddleStrategy() {
         if (!isTradingTime() || !kiteService.isAccessTokenValid() || isTradingStopped()) {
             return;
@@ -72,7 +74,7 @@ public class TradingService {
 
     private void placeNewStraddle() {
         log.info("placeNewStraddle()");
-        List<NfoInstrument> symbols = kiteService.getATMStraddleSymbols();
+        List<NfoInstrument> symbols = kiteService.getATMStraddleSymbols(this.selectedExpiryDate);
         if (symbols.size() != 2) {
             logger.error("Unable to get ATM straddle symbols");
             return;
@@ -189,6 +191,7 @@ public class TradingService {
                 break;
             }
         }
+        activeTrades = getActivePositions();
     }
 
     // No changes needed in the methods below
@@ -226,9 +229,13 @@ public class TradingService {
         dailyPnLRepository.save(dailyPnL);
     }
 
-    public void startTrading() {
+    public void startTrading(TradingConfigDto config) {
         tradingActive = true;
         logger.info("Trading started");
+        this.maxDailyLoss = config.getMaxDailyLoss();
+        this.profitTarget = config.getProfitTarget();
+        this.stopLoss = config.getStopLoss();
+        this.selectedExpiryDate = config.getExpiryDate();
         executeStraddleStrategy();
     }
 
