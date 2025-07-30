@@ -51,16 +51,17 @@ public class TradingService {
     @Autowired
     KiteTickerService kiteTickerService;
 
-    @Scheduled(cron = "0 */5 9-15 * * MON-FRI") // Every 5 minutes during trading hours
+    List<Trade> activeTrades =new ArrayList<>();
+
+    // No changes in this section (executeStraddleStrategy, placeNewStraddle)
+    // The constructor for Trade already handles setting the entryPrice.
+    @Scheduled(cron = "0 */5 9-15 * * MON-FRI")
     public void executeStraddleStrategy() {
         if (!isTradingTime() || !kiteService.isAccessTokenValid() || isTradingStopped()) {
             return;
         }
-
         logger.info("Executing straddle strategy...");
-
         try {
-            // Place new straddle if no active positions
             if (getActivePositions().isEmpty()) {
                 placeNewStraddle();
             }
@@ -76,38 +77,31 @@ public class TradingService {
             logger.error("Unable to get ATM straddle symbols");
             return;
         }
-
         String ceSymbol = symbols.get(0).getTradingsymbol();
         String peSymbol = symbols.get(1).getTradingsymbol();
-
-        // Get current prices
         BigDecimal cePrice = kiteService.getLastPrice(ceSymbol);
         BigDecimal pePrice = kiteService.getLastPrice(peSymbol);
-        log.info("CE price : "+cePrice);
-        log.info("PE price : "+pePrice);
-
+        log.info("CE price : " + cePrice);
+        log.info("PE price : " + pePrice);
         if (cePrice.compareTo(BigDecimal.ZERO) > 0 && pePrice.compareTo(BigDecimal.ZERO) > 0) {
-            // Place buy orders for both legs
             String ceOrderId = kiteService.placeOrder(ceSymbol, "BUY", 25, "MARKET", cePrice);
             String peOrderId = kiteService.placeOrder(peSymbol, "BUY", 25, "MARKET", pePrice);
-
             if (ceOrderId != null && peOrderId != null) {
-                // Save trades to database
+                // The updated Trade constructor correctly sets the entryPrice
                 Trade ceTrade = new Trade(ceSymbol, "BUY", 25, cePrice, "STRADDLE");
                 ceTrade.setOrderId(ceOrderId);
                 ceTrade.setInstrumentToken(symbols.get(0).getInstrument_token());
                 Trade peTrade = new Trade(peSymbol, "BUY", 25, pePrice, "STRADDLE");
                 peTrade.setOrderId(peOrderId);
                 peTrade.setInstrumentToken(symbols.get(1).getInstrument_token());
-
                 tradeRepository.save(ceTrade);
                 tradeRepository.save(peTrade);
-
                 logger.info("Placed straddle: CE {} at {}, PE {} at {}", ceSymbol, cePrice, peSymbol, pePrice);
                 List<Long> tokens = new ArrayList<>();
                 tokens.add(Long.valueOf(symbols.get(0).getInstrument_token()));
                 tokens.add(Long.valueOf(symbols.get(1).getInstrument_token()));
                 kiteTickerService.subscribe(tokens);
+                activeTrades = getActivePositions();
             }
         }
     }
@@ -115,7 +109,6 @@ public class TradingService {
     @EventListener
     public void handlePriceTickEvent(PriceTickEvent event) {
         PriceTick tick = event.getPriceTick();
-        //log.info("Processing tick for token {}: LTP = {}", tick.getInstrumentToken(), tick.getLastTradedPrice());
         try {
             checkAndClosePositions(tick);
         } catch (Exception e) {
@@ -124,112 +117,73 @@ public class TradingService {
     }
 
     void checkAndClosePositions(PriceTick tick) {
-        List<Trade> activeTrades = getActivePositions();
+        log.info("activeTrades.size() : "+activeTrades.size());
         if (activeTrades.isEmpty()) {
             return;
         }
 
         for (Trade trade : activeTrades) {
-            // *** BUG FIX ***
-            // The logic is corrected to process the trade that MATCHES the incoming tick.
             if (Long.parseLong(trade.getInstrumentToken()) != tick.getInstrumentToken()) {
-                continue; // Skip trades that don't match this tick.
+                continue;
             }
 
             BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
-            BigDecimal priceDiff = currentPrice.subtract(trade.getPrice());
+            // --- CHANGE: Use getEntryPrice() for PnL calculation ---
+            BigDecimal priceDiff = currentPrice.subtract(trade.getEntryPrice());
 
             boolean shouldClose = false;
 
-            // Check profit target
             if (priceDiff.compareTo(profitTarget) >= 0) {
                 shouldClose = true;
-                logger.info("Profit target hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
+                // --- CHANGE: Use getEntryPrice() for logging ---
+                logger.info("Profit target hit for {}: {} -> {}", trade.getSymbol(), trade.getEntryPrice(), currentPrice);
             }
-            // Check stop loss
             if (priceDiff.compareTo(stopLoss.negate()) <= 0) {
                 shouldClose = true;
-                logger.info("Stop loss hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
+                // --- CHANGE: Use getEntryPrice() for logging ---
+                logger.info("Stop loss hit for {}: {} -> {}", trade.getSymbol(), trade.getEntryPrice(), currentPrice);
             }
 
             if (shouldClose) {
                 String orderId = kiteService.placeOrder(trade.getSymbol(), "SELL", trade.getQuantity(), "MARKET", currentPrice);
                 if (orderId != null) {
+                    // --- CHANGE: Set new exit fields before saving ---
                     trade.setStatus("CLOSED");
+                    trade.setExitPrice(currentPrice); // Set the exit price
+                    trade.setExitTimestamp(LocalDateTime.now()); // Set the exit time
                     trade.setPnl(priceDiff.multiply(new BigDecimal(trade.getQuantity())));
                     tradeRepository.save(trade);
 
                     updateDailyPnL(trade.getPnl());
-
-                    // Close the other leg of straddle
                     closeOtherLeg(trade);
-
-                    // Since we've processed the trade for this tick, we can stop iterating.
                     break;
                 }
             }
         }
     }
 
-    /*void checkAndClosePositions(PriceTick tick) {
-        log.info("checkAndClosePositions()");
-        List<Trade> activeTrades = getActivePositions();
-
-        for (Trade trade : activeTrades) {
-            if (Long.parseLong(trade.getInstrumentToken())==(tick.getInstrumentToken())) {
-                continue; // Skip trades that don't match the tick
-            }
-            BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
-            BigDecimal priceDiff = currentPrice.subtract(trade.getPrice());
-
-            boolean shouldClose = false;
-
-            // Check profit target (30 points up)
-            if (priceDiff.compareTo(profitTarget) >= 0) {
-                shouldClose = true;
-                logger.info("Profit target hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
-            }
-
-            // Check stop loss (15 points down)
-            if (priceDiff.compareTo(stopLoss.negate()) <= 0) {
-                shouldClose = true;
-                logger.info("Stop loss hit for {}: {} -> {}", trade.getSymbol(), trade.getPrice(), currentPrice);
-            }
-
-            if (shouldClose) {
-                String orderId = kiteService.placeOrder(trade.getSymbol(), "SELL", trade.getQuantity(), "MARKET", currentPrice);
-                if (orderId != null) {
-                    trade.setStatus("CLOSED");
-                    trade.setPnl(priceDiff.multiply(new BigDecimal(trade.getQuantity())));
-                    tradeRepository.save(trade);
-
-                    updateDailyPnL(trade.getPnl());
-
-                    // Close the other leg of straddle
-                    closeOtherLeg(trade);
-                }
-            }
-        }
-    }*/
-
     private void closeOtherLeg(Trade closedTrade) {
-        List<Trade> activeTrades = tradeRepository.findByStrategyAndStatus("STRADDLE", "OPEN");
+//        List<Trade> activeTrades = tradeRepository.findByStrategyAndStatus("STRADDLE", "OPEN");
 
         for (Trade trade : activeTrades) {
+            // --- CHANGE: Use getEntryTimestamp() for comparison ---
             if (!trade.getId().equals(closedTrade.getId()) &&
-                    trade.getTimestamp().isAfter(closedTrade.getTimestamp().minusMinutes(1))) {
+                    trade.getEntryTimestamp().isAfter(closedTrade.getEntryTimestamp().minusMinutes(1))) {
 
                 BigDecimal currentPrice = kiteService.getLastPrice(trade.getSymbol());
                 String orderId = kiteService.placeOrder(trade.getSymbol(), "SELL", trade.getQuantity(), "MARKET", currentPrice);
 
                 if (orderId != null) {
+                    // --- CHANGE: Use getEntryPrice() and set new exit fields ---
+                    BigDecimal pnl = currentPrice.subtract(trade.getEntryPrice()).multiply(new BigDecimal(trade.getQuantity()));
+
                     trade.setStatus("CLOSED");
-                    BigDecimal pnl = currentPrice.subtract(trade.getPrice()).multiply(new BigDecimal(trade.getQuantity()));
+                    trade.setExitPrice(currentPrice); // Set the exit price
+                    trade.setExitTimestamp(LocalDateTime.now()); // Set the exit time
                     trade.setPnl(pnl);
                     tradeRepository.save(trade);
 
                     updateDailyPnL(pnl);
-
                     logger.info("Closed other leg: {} at {} with PnL: {}", trade.getSymbol(), currentPrice, pnl);
                 }
                 break;
@@ -237,6 +191,7 @@ public class TradingService {
         }
     }
 
+    // No changes needed in the methods below
     private List<Trade> getActivePositions() {
         return tradeRepository.findByStatus("OPEN");
     }
@@ -249,9 +204,12 @@ public class TradingService {
     }
 
     private boolean isTradingStopped() {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay(); // Today at 00:00
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
         LocalDateTime endOfDay = LocalDate.now().plusDays(1).atStartOfDay();
         BigDecimal todaysPnL = tradeRepository.findTodaysPnLBetween(startOfDay, endOfDay);
+        if (todaysPnL == null) {
+            todaysPnL = BigDecimal.ZERO;
+        }
         return todaysPnL.compareTo(maxDailyLoss.negate()) <= 0;
     }
 
@@ -259,15 +217,12 @@ public class TradingService {
         LocalDate today = LocalDate.now();
         DailyPnL dailyPnL = dailyPnLRepository.findByDate(today)
                 .orElse(new DailyPnL(today));
-
         dailyPnL.setTotalPnl(dailyPnL.getTotalPnl().add(pnl));
         dailyPnL.setTotalTrades(dailyPnL.getTotalTrades() + 1);
-
         if (dailyPnL.getTotalPnl().compareTo(maxDailyLoss.negate()) <= 0) {
             dailyPnL.setTradingStopped(true);
             logger.warn("Daily loss limit reached. Trading stopped for today.");
         }
-
         dailyPnLRepository.save(dailyPnL);
     }
 
@@ -289,7 +244,7 @@ public class TradingService {
 
     public BigDecimal getTodaysPnL() {
         log.info("Fetching todays PnL");
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay(); // Today at 00:00
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
         LocalDateTime endOfDay = LocalDate.now().plusDays(1).atStartOfDay();
         return tradeRepository.findTodaysPnLBetween(startOfDay, endOfDay);
     }

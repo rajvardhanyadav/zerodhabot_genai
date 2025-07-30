@@ -155,25 +155,31 @@
                         <table class="table table-striped">
                             <thead>
                             <tr>
-                                <th>Time</th>
+                                <th>Entry Time</th>
+                                <th>Exit Time</th>
                                 <th>Symbol</th>
                                 <th>Type</th>
                                 <th>Quantity</th>
-                                <th>Price</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
                                 <th>P&L</th>
                                 <th>Status</th>
                             </tr>
                             </thead>
                             <tbody id="tradesTable">
                             <tr th:each="trade : ${recentTrades}">
-                                <td th:text="${#temporals.format(trade.timestamp, 'HH:mm:ss')}"></td>
+<!--                                <td th:text="${#temporals.format(trade.entry_timestamp, 'HH:mm:ss')}"></td>-->
+<!--                                <td th:text="${#temporals.format(trade.exit_timestamp, 'HH:mm:ss')}"></td>-->
+                                <td th:text="${trade.entryTimestamp}"></td>
+                                <td th:text="${trade.exitTimestamp}"></td>
                                 <td th:text="${trade.symbol}"></td>
                                 <td>
                                             <span class="badge" th:class="${trade.type == 'BUY'} ? 'bg-success' : 'bg-danger'"
                                                   th:text="${trade.type}"></span>
                                 </td>
                                 <td th:text="${trade.quantity}"></td>
-                                <td th:text="${trade.price}"></td>
+                                <td th:text="${trade.entryPrice}"></td>
+                                <td th:text="${trade.exitPrice}"></td>
                                 <td th:class="${trade.pnl >= 0} ? 'pnl-positive' : 'pnl-negative'"
                                     th:text="${trade.pnl}"></td>
                                 <td>

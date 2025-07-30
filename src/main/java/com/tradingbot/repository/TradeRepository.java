@@ -12,21 +12,32 @@ import java.util.List;
 
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, Long> {
+
+    /**
+     * Finds all trades with a given status (e.g., "OPEN").
+     */
     List<Trade> findByStatus(String status);
 
     /**
-     * Calculates the sum of PnL for trades within a given time window.
-     * Using parameters for the date range is more portable across different databases
-     * than using database-specific functions like DATE().
      *
-     * @param startOfDay The start of the day (e.g., today at 00:00:00).
-     * @param endOfDay   The end of the day (e.g., today at 23:59:59.999).
-     * @return The total PnL as a BigDecimal, or 0 if no trades are found.
+     * Finds all trades for a specific strategy and status.
      */
-    @Query("SELECT COALESCE(SUM(t.pnl), 0) FROM Trade t WHERE t.timestamp >= :startOfDay AND t.timestamp < :endOfDay")
-    BigDecimal findTodaysPnLBetween(@Param("startOfDay") LocalDateTime startOfDay, @Param("endOfDay") LocalDateTime endOfDay);
-
-    List<Trade> findByTimestampBetween(LocalDateTime start, LocalDateTime end);
-
     List<Trade> findByStrategyAndStatus(String strategy, String status);
+
+    /**
+     * Finds all trades, ordered by the most recent entry time first.
+     * Useful for the dashboard display.
+     */
+    List<Trade> findAllByOrderByEntryTimestampDesc();
+
+    /**
+     * --- THIS IS THE FIX ---
+     * Calculates the total realized Profit and Loss for trades that were CLOSED
+     * within a specific time window (typically, for the current day).
+     *
+     * The query was updated to use `t.exitTimestamp` instead of the old `timestamp` field.
+     * We also explicitly check for `status = 'CLOSED'` to ensure we only sum realized PnL.
+     */
+    @Query("SELECT sum(t.pnl) FROM Trade t WHERE t.status = 'CLOSED' AND t.exitTimestamp >= :start AND t.exitTimestamp < :end")
+    BigDecimal findTodaysPnLBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

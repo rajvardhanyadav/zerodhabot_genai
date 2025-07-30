@@ -61,7 +61,7 @@ public class KiteTickerService {
             if (ticks.isEmpty()) {
                 return;
             }
-            log.info("Received {} ticks.", ticks.size());
+//            log.info("Received {} ticks.", ticks.size());
             for (Tick tick : ticks) {
                 // Convert to our internal DTO
                 PriceTick priceTick = new PriceTick(tick.getInstrumentToken(), tick.getLastTradedPrice());

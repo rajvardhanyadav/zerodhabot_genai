@@ -14,10 +14,28 @@ public class Trade {
     private String symbol;
     private String type; // BUY/SELL
     private Integer quantity;
-    private BigDecimal price;
+
+    // Renamed from 'price' for clarity
+    @Column(name = "entry_price")
+    private BigDecimal entryPrice;
+
+    // --- NEW FIELD ---
+    // To store the price at which the position was closed
+    @Column(name = "exit_price")
+    private BigDecimal exitPrice;
+
     private BigDecimal pnl;
     private String status; // OPEN/CLOSED
-    private LocalDateTime timestamp;
+
+    // Renamed from 'timestamp' for clarity
+    @Column(name = "entry_timestamp")
+    private LocalDateTime entryTimestamp;
+
+    // --- NEW FIELD ---
+    // To store the time at which the position was closed
+    @Column(name = "exit_timestamp")
+    private LocalDateTime exitTimestamp;
+
     private String orderId;
     private String strategy;
     private String instrumentToken;
@@ -25,14 +43,15 @@ public class Trade {
     // Constructors
     public Trade() {}
 
-    public Trade(String symbol, String type, Integer quantity, BigDecimal price, String strategy) {
+    // Updated constructor to set the entry price and timestamp
+    public Trade(String symbol, String type, Integer quantity, BigDecimal entryPrice, String strategy) {
         this.symbol = symbol;
         this.type = type;
         this.quantity = quantity;
-        this.price = price;
+        this.entryPrice = entryPrice;
         this.strategy = strategy;
         this.status = "OPEN";
-        this.timestamp = LocalDateTime.now();
+        this.entryTimestamp = LocalDateTime.now();
         this.pnl = BigDecimal.ZERO;
     }
 
@@ -45,24 +64,22 @@ public class Trade {
     public void setType(String type) { this.type = type; }
     public Integer getQuantity() { return quantity; }
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
-    public BigDecimal getPrice() { return price; }
-    public void setPrice(BigDecimal price) { this.price = price; }
+    public BigDecimal getEntryPrice() { return entryPrice; }
+    public void setEntryPrice(BigDecimal entryPrice) { this.entryPrice = entryPrice; }
+    public BigDecimal getExitPrice() { return exitPrice; }
+    public void setExitPrice(BigDecimal exitPrice) { this.exitPrice = exitPrice; }
     public BigDecimal getPnl() { return pnl; }
     public void setPnl(BigDecimal pnl) { this.pnl = pnl; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
+    public LocalDateTime getEntryTimestamp() { return entryTimestamp; }
+    public void setEntryTimestamp(LocalDateTime entryTimestamp) { this.entryTimestamp = entryTimestamp; }
+    public LocalDateTime getExitTimestamp() { return exitTimestamp; }
+    public void setExitTimestamp(LocalDateTime exitTimestamp) { this.exitTimestamp = exitTimestamp; }
     public String getOrderId() { return orderId; }
     public void setOrderId(String orderId) { this.orderId = orderId; }
     public String getStrategy() { return strategy; }
     public void setStrategy(String strategy) { this.strategy = strategy; }
-
-    public String getInstrumentToken() {
-        return instrumentToken;
-    }
-
-    public void setInstrumentToken(String instrumentToken) {
-        this.instrumentToken = instrumentToken;
-    }
+    public String getInstrumentToken() { return instrumentToken; }
+    public void setInstrumentToken(String instrumentToken) { this.instrumentToken = instrumentToken; }
 }
