@@ -9,6 +9,7 @@ import com.tradingbot.service.KiteService;
 import com.tradingbot.service.TradingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -29,11 +30,17 @@ public class BuyStraddleStrategy extends AbstractStrategy {
 
     @Override
     public void execute(TradingConfigDto config) {
-//        if (!isTradingTime() || !isAccessTokenValid() || isTradingStopped()) {
+        loadTradingConfig(config);
+        executeStrategy();
+    }
+
+    @Scheduled(cron = "0 */5 9-23 * * MON-SAT")
+    private void executeStrategy() {
+        log.info("executeStrategy()");
+        //        if (!isTradingTime() || !isAccessTokenValid() || isTradingStopped()) {
 //            return;
 //        }
         log.info("Executing straddle strategy...");
-        loadTradingConfig(config);
         try {
             if (getActivePositions().isEmpty()) {
                 placeNewStraddle();
