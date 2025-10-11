@@ -34,12 +34,12 @@ public class BuyStraddleStrategy extends AbstractStrategy {
         executeStrategy();
     }
 
-    @Scheduled(cron = "0 */5 9-23 * * MON-SAT")
+    @Scheduled(cron = "0 */5 9-15 * * MON-FRI")
     private void executeStrategy() {
         log.info("executeStrategy()");
-        //        if (!isTradingTime() || !isAccessTokenValid() || isTradingStopped()) {
-//            return;
-//        }
+        if (!isTradingTime() || !isAccessTokenValid() || isTradingStopped()) {
+            return;
+        }
         log.info("Executing straddle strategy...");
         try {
             if (getActivePositions().isEmpty()) {
@@ -99,8 +99,8 @@ public class BuyStraddleStrategy extends AbstractStrategy {
 
             BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
             BigDecimal priceDiff = currentPrice.subtract(trade.getEntryPrice());
-            log.info("currentPrice : "+currentPrice);
-            log.info("priceDiff : "+priceDiff);
+            log.info("currentPrice : " + currentPrice);
+            log.info("priceDiff : " + priceDiff);
 
             if (shouldClosePosition(priceDiff)) {
                 log.info("Closing trade for symbol: {}", trade.getSymbol());
