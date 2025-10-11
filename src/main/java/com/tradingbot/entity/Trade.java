@@ -1,85 +1,90 @@
 package com.tradingbot.entity;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * Entity representing a trade in the trading system.
+ */
 @Entity
 @Table(name = "trades")
-public class Trade {
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public final class Trade {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** The symbol of the traded instrument. */
     private String symbol;
-    private String type; // BUY/SELL
+
+    /** The type of trade (BUY/SELL). */
+    @Enumerated(EnumType.STRING)
+    private TradeType type;
+
+    /** The quantity of the trade. */
     private Integer quantity;
 
-    // Renamed from 'price' for clarity
+    /** The price at which the position was entered. */
     @Column(name = "entry_price")
     private BigDecimal entryPrice;
 
-    // --- NEW FIELD ---
-    // To store the price at which the position was closed
+    /** The price at which the position was closed. */
     @Column(name = "exit_price")
     private BigDecimal exitPrice;
 
-    private BigDecimal pnl;
-    private String status; // OPEN/CLOSED
+    /** The profit or loss of the trade. */
+    @Builder.Default
+    private BigDecimal pnl = BigDecimal.ZERO;
 
-    // Renamed from 'timestamp' for clarity
+    /** The status of the trade (OPEN/CLOSED). */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private TradeStatus status = TradeStatus.OPEN;
+
+    /** The timestamp when the position was entered. */
     @Column(name = "entry_timestamp")
-    private LocalDateTime entryTimestamp;
+    @Builder.Default
+    private LocalDateTime entryTimestamp = LocalDateTime.now();
 
-    // --- NEW FIELD ---
-    // To store the time at which the position was closed
+    /** The timestamp when the position was closed. */
     @Column(name = "exit_timestamp")
     private LocalDateTime exitTimestamp;
 
+    /** The order ID associated with the trade. */
     private String orderId;
+
+    /** The strategy used for the trade. */
     private String strategy;
+
+    /** The instrument token of the traded instrument. */
     private String instrumentToken;
 
-    // Constructors
-    public Trade() {}
+    /** Enum representing the type of trade. */
+    public enum TradeType {
+        BUY, SELL
+    }
 
-    // Updated constructor to set the entry price and timestamp
-    public Trade(String symbol, String type, Integer quantity, BigDecimal entryPrice, String strategy) {
+    /** Enum representing the status of the trade. */
+    public enum TradeStatus {
+        OPEN, CLOSED
+    }
+
+    public Trade(String symbol, String type, int quantity, BigDecimal entryPrice, String strategy) {
         this.symbol = symbol;
-        this.type = type;
+        this.type = TradeType.valueOf(type); // Convert String to Enum
         this.quantity = quantity;
         this.entryPrice = entryPrice;
         this.strategy = strategy;
-        this.status = "OPEN";
-        this.entryTimestamp = LocalDateTime.now();
-        this.pnl = BigDecimal.ZERO;
+        this.status = TradeStatus.OPEN; // Default status
+        this.entryTimestamp = LocalDateTime.now(); // Default entry timestamp
     }
-
-    // Getters and Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getSymbol() { return symbol; }
-    public void setSymbol(String symbol) { this.symbol = symbol; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public Integer getQuantity() { return quantity; }
-    public void setQuantity(Integer quantity) { this.quantity = quantity; }
-    public BigDecimal getEntryPrice() { return entryPrice; }
-    public void setEntryPrice(BigDecimal entryPrice) { this.entryPrice = entryPrice; }
-    public BigDecimal getExitPrice() { return exitPrice; }
-    public void setExitPrice(BigDecimal exitPrice) { this.exitPrice = exitPrice; }
-    public BigDecimal getPnl() { return pnl; }
-    public void setPnl(BigDecimal pnl) { this.pnl = pnl; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public LocalDateTime getEntryTimestamp() { return entryTimestamp; }
-    public void setEntryTimestamp(LocalDateTime entryTimestamp) { this.entryTimestamp = entryTimestamp; }
-    public LocalDateTime getExitTimestamp() { return exitTimestamp; }
-    public void setExitTimestamp(LocalDateTime exitTimestamp) { this.exitTimestamp = exitTimestamp; }
-    public String getOrderId() { return orderId; }
-    public void setOrderId(String orderId) { this.orderId = orderId; }
-    public String getStrategy() { return strategy; }
-    public void setStrategy(String strategy) { this.strategy = strategy; }
-    public String getInstrumentToken() { return instrumentToken; }
-    public void setInstrumentToken(String instrumentToken) { this.instrumentToken = instrumentToken; }
 }

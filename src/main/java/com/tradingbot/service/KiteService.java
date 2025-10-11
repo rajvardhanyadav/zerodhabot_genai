@@ -6,6 +6,7 @@ import com.tradingbot.config.KiteConfig;
 import com.tradingbot.dto.AccountInfo;
 import com.tradingbot.dto.NfoInstrument;
 import com.tradingbot.dto.PaperTrade;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -34,6 +35,11 @@ public class KiteService {
     @Autowired
     private KiteConfig kiteConfig;
 
+    /**
+     * -- GETTER --
+     *  Check if paper trading is enabled
+     */
+    @Getter
     @Value("${trading.paper.enabled:false}")
     private boolean paperTradingEnabled;
 
@@ -92,7 +98,6 @@ public class KiteService {
             log.info(response);
             JsonNode jsonResponse = objectMapper.readTree(response);
             if (jsonResponse.has("data")) {
-                log.info("jsonResponse : " + jsonResponse.asText());
                 JsonNode data = jsonResponse.get("data").get("equity");
                 AccountInfo accountInfo = new AccountInfo();
                 accountInfo.setAvailableMargin(new BigDecimal(data.get("available").get("live_balance").asText()));
@@ -156,42 +161,33 @@ public class KiteService {
         return null;
     }
 
-    /**
-     * Paper trading order placement method
-     */
     private String placePaperOrder(String symbol, String transactionType, int quantity, String orderType, BigDecimal price) {
         log.info("placePaperOrder() - Symbol: {}, Type: {}, Qty: {}", symbol, transactionType, quantity);
         try {
-            // Generate paper order ID
             String paperOrderId = "PAPER_" + (paperOrderIdCounter++);
 
-            // Get current market price for simulation
             BigDecimal marketPrice = getLastPrice(symbol);
+            log.info("LTP : "+marketPrice);
             if (marketPrice.equals(BigDecimal.ZERO)) {
                 log.warn("Could not fetch market price for paper order simulation: {}", symbol);
-                marketPrice = price; // Use order price as fallback
+                marketPrice = price;
             }
 
-            // Create paper trade record
             PaperTrade paperTrade = new PaperTrade();
             paperTrade.setOrderId(paperOrderId);
             paperTrade.setSymbol(symbol);
-            paperTrade.setTransactionType(transactionType);
+            paperTrade.setTransactionType(PaperTrade.TransactionType.valueOf(transactionType.toUpperCase())); // Convert String to Enum
             paperTrade.setQuantity(quantity);
-            paperTrade.setOrderType(orderType);
+            paperTrade.setOrderType(PaperTrade.OrderType.valueOf(orderType.toUpperCase())); // Convert String to Enum
             paperTrade.setOrderPrice(price);
             paperTrade.setMarketPrice(marketPrice);
             paperTrade.setOrderTime(LocalDateTime.now());
-            paperTrade.setStatus("COMPLETE"); // Simulate immediate execution
+            paperTrade.setStatus(PaperTrade.Status.COMPLETE); // Use Enum directly
 
-            // For market orders, use market price; for limit orders, use order price
-            BigDecimal executionPrice = "MARKET".equals(orderType) ? marketPrice : price;
+            BigDecimal executionPrice = PaperTrade.OrderType.MARKET.equals(paperTrade.getOrderType()) ? marketPrice : price;
             paperTrade.setExecutionPrice(executionPrice);
-
-            // Calculate P&L (will be updated when position is closed)
             paperTrade.setPnl(BigDecimal.ZERO);
 
-            // Store paper trade
             paperTrades.put(paperOrderId, paperTrade);
 
             log.info("Paper order placed successfully. Order ID: {}, Symbol: {}, Price: {}, Market Price: {}",
@@ -203,6 +199,32 @@ public class KiteService {
             logger.error("Error placing paper order", e);
             return null;
         }
+    }
+
+    private NfoInstrument getInstrument(String nfoData, int atmStrike, String instrumentType, LocalDate selectedExpiryDate) {
+        List<NfoInstrument> nfoInstruments = new ArrayList<>();
+        for (Map.Entry<String, LocalDate> entry : bankNiftyExpiries.entrySet()) {
+            String[] fields1 = entry.getKey().split(",");
+            if (fields1.length > 10 && fields1[2].startsWith("BANKNIFTY") &&
+                    fields1[9].equals(instrumentType) && LocalDate.parse(fields1[5]).isEqual(selectedExpiryDate) &&
+                    Integer.parseInt(fields1[6]) == atmStrike) {
+                NfoInstrument nfoInstrument = new NfoInstrument();
+                nfoInstrument.setInstrumentToken(fields1[0]); // Updated setter
+                nfoInstrument.setExchangeToken(fields1[1]); // Updated setter
+                nfoInstrument.setTradingSymbol(fields1[2]); // Updated setter
+                nfoInstrument.setName(fields1[3]);
+                nfoInstrument.setLastPrice(fields1[4]); // Updated setter
+                nfoInstrument.setExpiry(fields1[5]);
+                nfoInstrument.setStrike(fields1[6]);
+                nfoInstrument.setTickSize(fields1[7]); // Updated setter
+                nfoInstrument.setLotSize(fields1[8]); // Updated setter
+                nfoInstrument.setInstrumentType(fields1[9]); // Updated setter
+                nfoInstrument.setSegment(fields1[10]);
+                nfoInstrument.setExchange(fields1[11]);
+                return nfoInstrument;
+            }
+        }
+        return null;
     }
 
     /**
@@ -268,15 +290,8 @@ public class KiteService {
         log.info("All paper trades cleared");
     }
 
-    /**
-     * Check if paper trading is enabled
-     */
-    public boolean isPaperTradingEnabled() {
-        return paperTradingEnabled;
-    }
-
     public BigDecimal getLastPrice(String symbol) {
-        log.info("getLastPrice()");
+        //log.info("getLastPrice()");
         try {
             HttpGet get = new HttpGet(kiteConfig.getBaseUrl() + "/quote/ltp?i=NFO:" + symbol);
             get.setHeader("Authorization", "token " + kiteConfig.getKey() + ":" + accessToken);
@@ -340,15 +355,15 @@ public class KiteService {
 //            String peSymbol = "BANKNIFTY" + nfoData + atmStrike + "PE";
             NfoInstrument nfoInstrumentPE = getInstrument(nfoData, atmStrike, "PE",selectedExpiryDate);
             assert nfoInstrumentCE != null;
-            log.info("ceSymbol : " + nfoInstrumentCE.getTradingsymbol());
+            log.info("ceSymbol : " + nfoInstrumentCE.getTradingSymbol());
             assert nfoInstrumentPE != null;
-            log.info("peSymbol : " + nfoInstrumentPE.getTradingsymbol());
+            log.info("peSymbol : " + nfoInstrumentPE.getTradingSymbol());
 
             symbols.add(nfoInstrumentCE);
             symbols.add(nfoInstrumentPE);
 
             logger.info("Generated ATM straddle symbols: CE={}, PE={} for strike={}",
-                    nfoInstrumentCE.getTradingsymbol(), nfoInstrumentPE.getTradingsymbol(), atmStrike);
+                    nfoInstrumentCE.getTradingSymbol(), nfoInstrumentPE.getTradingSymbol(), atmStrike);
 
             return symbols;
 
@@ -356,34 +371,6 @@ public class KiteService {
             logger.error("Error generating ATM straddle symbols", e);
             return Collections.emptyList();
         }
-    }
-
-    private NfoInstrument getInstrument(String nfoData, int atmStrike, String instrumentType, LocalDate selectedExpiryDate) {
-        //String[] fields = nfoData.split(",");
-        //String expiry = fields[5];
-        List<NfoInstrument> nfoInstruments = new ArrayList<>();
-        for (Map.Entry<String, LocalDate> entry : bankNiftyExpiries.entrySet()) {
-            String[] fields1 = entry.getKey().split(",");
-            if (fields1.length > 10 && fields1[2].startsWith("BANKNIFTY") &&
-                    fields1[9].equals(instrumentType) && LocalDate.parse(fields1[5]).isEqual(selectedExpiryDate) &&
-                    Integer.parseInt(fields1[6]) == atmStrike) {
-                NfoInstrument nfoInstrument = new NfoInstrument();
-                nfoInstrument.setInstrument_token(fields1[0]);
-                nfoInstrument.setExchange_token(fields1[1]);
-                nfoInstrument.setTradingsymbol(fields1[2]);
-                nfoInstrument.setName(fields1[3]);
-                nfoInstrument.setLast_price(fields1[4]);
-                nfoInstrument.setExpiry(fields1[5]);
-                nfoInstrument.setStrike(fields1[6]);
-                nfoInstrument.setTick_size(fields1[7]);
-                nfoInstrument.setLot_size(fields1[8]);
-                nfoInstrument.setInstrument_type(fields1[9]);
-                nfoInstrument.setSegment(fields1[10]);
-                nfoInstrument.setExchange(fields1[11]);
-                return nfoInstrument;
-            }
-        }
-        return null;
     }
 
     public BigDecimal getBankNiftyPrice() {
@@ -489,7 +476,6 @@ public class KiteService {
         } catch (Exception e) {
             logger.error("Error refreshing expiry data", e);
         }
-        log.info("expiryDates() : " + expiryDates.size());
         List<LocalDate> upcomingExpiries = new ArrayList<>();
         for (Map.Entry<String, LocalDate> entry : expiryDates.entrySet()) {
             String key = entry.getKey();

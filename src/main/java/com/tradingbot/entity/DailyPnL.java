@@ -1,40 +1,55 @@
 package com.tradingbot.entity;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+/**
+ * Entity representing the daily profit and loss (PnL) for trading.
+ */
 @Entity
 @Table(name = "daily_pnl")
-public class DailyPnL {
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public final class DailyPnL {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * The date for the daily PnL record.
+     */
     private LocalDate date;
-    private BigDecimal totalPnl;
-    private Integer totalTrades;
-    private Boolean tradingStopped;
 
-    // Constructors
-    public DailyPnL() {}
+    /**
+     * The total profit or loss for the day.
+     */
+    @Builder.Default
+    private BigDecimal totalPnl = BigDecimal.ZERO;
+
+    /**
+     * The total number of trades executed on the day.
+     */
+    @Builder.Default
+    private Integer totalTrades = 0;
+
+    /**
+     * Indicates whether trading was stopped for the day.
+     */
+    @Builder.Default
+    private Boolean tradingStopped = false;
 
     public DailyPnL(LocalDate date) {
         this.date = date;
-        this.totalPnl = BigDecimal.ZERO;
-        this.totalTrades = 0;
-        this.tradingStopped = false;
+        this.totalPnl = BigDecimal.ZERO; // Default value
+        this.totalTrades = 0; // Default value
+        this.tradingStopped = false; // Default value
     }
-
-    // Getters and Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public LocalDate getDate() { return date; }
-    public void setDate(LocalDate date) { this.date = date; }
-    public BigDecimal getTotalPnl() { return totalPnl; }
-    public void setTotalPnl(BigDecimal totalPnl) { this.totalPnl = totalPnl; }
-    public Integer getTotalTrades() { return totalTrades; }
-    public void setTotalTrades(Integer totalTrades) { this.totalTrades = totalTrades; }
-    public Boolean getTradingStopped() { return tradingStopped; }
-    public void setTradingStopped(Boolean tradingStopped) { this.tradingStopped = tradingStopped; }
 }

@@ -10,17 +10,50 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<String> handleGenericException(Exception e) {
-        log.error("Unhandled exception", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("An error occurred: " + e.getMessage());
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException e) {
+        log.warn("Illegal argument exception: {}", e.getMessage());
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid input", e);
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<String> handleRuntimeException(RuntimeException e) {
-        log.error("Runtime exception", e);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body("Runtime error: " + e.getMessage());
+    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException e) {
+        log.error("Runtime exception occurred", e);
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Runtime error", e);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+        log.error("Unhandled exception occurred", e);
+        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", e);
+    }
+
+    private ResponseEntity<ErrorResponse> buildErrorResponse(HttpStatus status, String message, Exception e) {
+        ErrorResponse errorResponse = new ErrorResponse(status.value(), message, e.getMessage());
+        return ResponseEntity.status(status).body(errorResponse);
+    }
+
+    public static class ErrorResponse {
+        private final int statusCode;
+        private final String message;
+        private final String details;
+
+        public ErrorResponse(int statusCode, String message, String details) {
+            this.statusCode = statusCode;
+            this.message = message;
+            this.details = details;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public String getDetails() {
+            return details;
+        }
     }
 }
