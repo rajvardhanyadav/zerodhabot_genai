@@ -9,8 +9,8 @@
         <relativePath/>
     </parent>
     <groupId>com.tradingbot</groupId>
-    <artifactId>kite-trading-bot</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <artifactId>kitetradingbot</artifactId>
+    <version>1</version>
     <name>kite-trading-bot</name>
     <description>Trading Bot using Zerodha Kite API</description>
     <properties>
