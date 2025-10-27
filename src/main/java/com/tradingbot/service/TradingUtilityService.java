@@ -1,8 +1,11 @@
 package com.tradingbot.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
@@ -113,5 +116,19 @@ public class TradingUtilityService {
      */
     public String formatPercentage(BigDecimal percentage) {
         return String.format("%.2f%%", percentage);
+    }
+
+    public boolean isValidKiteResponse(String jsonResponse) throws IOException {
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonNode root = objectMapper.readTree(jsonResponse);
+
+        // safe access: path() never returns null
+        String status = root.path("status").asText("");
+        JsonNode dataNode = root.path("data");
+
+        boolean statusOk = !status.equalsIgnoreCase("error");         // status not equal to "error"
+        boolean dataOk = !dataNode.isMissingNode() && !dataNode.isNull(); // data exists and is not null
+
+        return statusOk && dataOk;
     }
 }

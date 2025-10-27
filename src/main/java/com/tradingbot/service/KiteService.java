@@ -1,11 +1,16 @@
 package com.tradingbot.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingbot.config.KiteConfig;
 import com.tradingbot.dto.AccountInfo;
 import com.tradingbot.dto.NfoInstrument;
 import com.tradingbot.dto.PaperTrade;
+import com.tradingbot.entity.Order;
+import com.tradingbot.entity.Position;
+import com.tradingbot.repository.OrderRepository;
+import com.tradingbot.repository.PositionRepository;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -20,12 +25,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.time.LocalDate;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -53,6 +62,16 @@ public class KiteService {
     // Paper trading storage
     private final Map<String, PaperTrade> paperTrades = new ConcurrentHashMap<>();
     private int paperOrderIdCounter = 1000;
+    private final OrderRepository orderRepository;
+    private final PositionRepository positionRepository;
+
+    @Autowired
+    TradingUtilityService tradingUtilityService;
+
+    public KiteService(OrderRepository orderRepository, PositionRepository positionRepository) {
+        this.orderRepository = orderRepository;
+        this.positionRepository = positionRepository;
+    }
 
     public String getLoginUrl(String requestToken) {
         return kiteConfig.getLoginUrl() + "?api_key=" + kiteConfig.getKey() + "&v=3";
@@ -150,7 +169,7 @@ public class KiteService {
             log.info("Real order response : " + response);
 
             JsonNode jsonResponse = objectMapper.readTree(response);
-            if (jsonResponse.has("data")) {
+            if (tradingUtilityService.isValidKiteResponse(response)) {
                 String orderId = jsonResponse.get("data").get("order_id").asText();
                 log.info("Real order placed successfully. Order ID: {}", orderId);
                 return orderId;
@@ -486,5 +505,217 @@ public class KiteService {
         }
         log.info("upcomingExpiries() : " + upcomingExpiries.size());
         return upcomingExpiries;
+    }
+
+    public List<Map<String, Object>> fetchOrders() {
+        log.info("Fetching orders from Kite API");
+        try {
+            HttpGet get = new HttpGet(kiteConfig.getBaseUrl() + "/orders");
+            get.setHeader("Authorization", "token " + kiteConfig.getKey() + ":" + accessToken);
+
+            String response = httpClient.execute(get, httpResponse ->
+                    new String(httpResponse.getEntity().getContent().readAllBytes()));
+
+            JsonNode jsonResponse = objectMapper.readTree(response);
+            if (jsonResponse.has("data") && jsonResponse.get("data").isArray()) {
+                return objectMapper.convertValue(jsonResponse.get("data"),
+                        new TypeReference<List<Map<String, Object>>>() {});
+            }
+        } catch (Exception e) {
+            log.error("Error fetching orders", e);
+        }
+        return Collections.emptyList();
+    }
+
+    public Map<String, List<Map<String, Object>>> fetchPositions() {
+        log.info("Fetching positions from Kite API");
+        try {
+            HttpGet get = new HttpGet(kiteConfig.getBaseUrl() + "/positions");
+            get.setHeader("Authorization", "token " + kiteConfig.getKey() + ":" + accessToken);
+
+            String response = httpClient.execute(get, httpResponse ->
+                    new String(httpResponse.getEntity().getContent().readAllBytes()));
+
+            JsonNode jsonResponse = objectMapper.readTree(response);
+            Map<String, List<Map<String, Object>>> positions = new HashMap<>();
+            if (jsonResponse.has("data")) {
+                JsonNode data = jsonResponse.get("data");
+                // day positions
+                if (data.has("day") && data.get("day").isArray()) {
+                    positions.put("day", objectMapper.convertValue(data.get("day"),
+                            new TypeReference<List<Map<String, Object>>>() {}));
+                } else {
+                    positions.put("day", Collections.emptyList());
+                }
+                // net positions
+                if (data.has("net") && data.get("net").isArray()) {
+                    positions.put("net", objectMapper.convertValue(data.get("net"),
+                            new TypeReference<List<Map<String, Object>>>() {}));
+                } else {
+                    positions.put("net", Collections.emptyList());
+                }
+                return positions;
+            }
+        } catch (Exception e) {
+            log.error("Error fetching positions", e);
+        }
+        // ensure keys exist for the template
+        Map<String, List<Map<String, Object>>> empty = new HashMap<>();
+        empty.put("day", Collections.emptyList());
+        empty.put("net", Collections.emptyList());
+        return empty;
+    }
+
+    @Transactional
+    public void persistFetchedOrders() {
+        List<Map<String, Object>> orders = fetchOrders(); // existing method
+        if (orders == null || orders.isEmpty()) {
+            log.info("No orders fetched to persist");
+            return;
+        }
+
+        List<Order> entities = orders.stream()
+                .map(this::mapToOrderEntity)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        orderRepository.saveAll(entities);
+        log.info("Persisted {} orders", entities.size());
+    }
+
+    @Transactional
+    public void persistFetchedPositions() {
+        Map<String, List<Map<String, Object>>> positions = fetchPositions(); // existing method
+        if (positions == null || positions.isEmpty()) {
+            log.info("No positions fetched to persist");
+            return;
+        }
+
+        List<Position> entities = new ArrayList<>();
+        positions.values().forEach(list -> {
+            if (list != null) {
+                list.stream()
+                        .map(this::mapToPositionEntity)
+                        .filter(Objects::nonNull)
+                        .forEach(entities::add);
+            }
+        });
+
+        positionRepository.saveAll(entities);
+        log.info("Persisted {} positions", entities.size());
+    }
+
+    private Order mapToOrderEntity(Map<String, Object> src) {
+        try {
+            if (src == null) return null;
+
+            String orderId = asString(src, "order_id", "orderId");
+            if (orderId == null) return null;
+
+            Order.OrderBuilder b = Order.builder()
+                    .orderId(orderId)
+                    .tradingSymbol(asString(src, "tradingsymbol", "instrument_token", "symbol"))
+                    .transactionType(asString(src, "transaction_type", "order_type"))
+                    .quantity(asInteger(src, "quantity", "filled_quantity", "qty"))
+                    .price(asBigDecimal(src, "price", "average_price"))
+                    .status(asString(src, "status"))
+                    .rawJson(objectMapper.writeValueAsString(src));
+
+            // optional timestamp fields (epoch millis or ISO)
+            LocalDateTime ts = extractTimestamp(src, "order_timestamp", "order_time", "created_at");
+            b.orderTimestamp(ts);
+
+            return b.build();
+        } catch (Exception e) {
+            log.warn("Failed to map order: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private Position mapToPositionEntity(Map<String, Object> src) {
+        try {
+            if (src == null) return null;
+
+            Position.PositionBuilder b = Position.builder()
+                    .tradingSymbol(asString(src, "tradingsymbol", "instrument_token", "symbol"))
+                    .quantity(asInteger(src, "quantity", "net_quantity", "qty"))
+                    .averagePrice(asBigDecimal(src, "average_price", "averagePrice", "avg_price"))
+                    .lastPrice(asBigDecimal(src, "last_price", "lastPrice", "ltp"))
+                    .pnl(asBigDecimal(src, "pnl", "unrealised", "pnl_unrealised"))
+                    .rawJson(objectMapper.writeValueAsString(src))
+                    .asOf(LocalDateTime.now());
+
+            return b.build();
+        } catch (Exception e) {
+            log.warn("Failed to map position: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    // helper converters
+    private String asString(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v != null) return String.valueOf(v);
+        }
+        return null;
+    }
+
+    private Integer asInteger(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v instanceof Number) return ((Number) v).intValue();
+            if (v instanceof String) {
+                try { return Integer.parseInt((String) v); } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal asBigDecimal(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v instanceof Number) return new BigDecimal(((Number) v).toString());
+            if (v instanceof String) {
+                try { return new BigDecimal((String) v); } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private LocalDateTime extractTimestamp(Map<String, Object> m, String... keys) {
+        for (String k : keys) {
+            Object v = m.get(k);
+            if (v instanceof Number) {
+                long epoch = ((Number) v).longValue();
+                // assume millis or seconds
+                if (epoch > 1_000_000_000_000L) { // millis
+                    return LocalDateTime.ofInstant(Instant.ofEpochMilli(epoch), ZoneId.systemDefault());
+                } else {
+                    return LocalDateTime.ofInstant(Instant.ofEpochSecond(epoch), ZoneId.systemDefault());
+                }
+            }
+            if (v instanceof String) {
+                try {
+                    // try parsing as long
+                    long l = Long.parseLong((String) v);
+                    if (l > 1_000_000_000_000L) {
+                        return LocalDateTime.ofInstant(Instant.ofEpochMilli(l), ZoneId.systemDefault());
+                    } else {
+                        return LocalDateTime.ofInstant(Instant.ofEpochSecond(l), ZoneId.systemDefault());
+                    }
+                } catch (NumberFormatException ignored) {}
+                try {
+                    return LocalDateTime.parse((String) v);
+                } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
+    public void fetchAndUpdateTrades() {
+        log.info("Fetching and updating trades from Kite API");
+        persistFetchedOrders();
+        persistFetchedPositions();
     }
 }

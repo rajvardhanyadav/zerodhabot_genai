@@ -68,10 +68,12 @@ public class BuyStraddleStrategy extends AbstractStrategy {
             String peOrderId = tradingService.placeOrder(peSymbol, TradingService.TRANSACTION_BUY, pePrice);
 
             if (ceOrderId != null && peOrderId != null) {
-                tradingService.saveTrade(ceSymbol, TradingService.TRANSACTION_BUY, ceOrderId, cePrice, symbols.get(0).getInstrumentToken());
-                tradingService.saveTrade(peSymbol, TradingService.TRANSACTION_BUY, peOrderId, pePrice, symbols.get(1).getInstrumentToken());
+//                tradingService.saveTrade(ceSymbol, TradingService.TRANSACTION_BUY, ceOrderId, cePrice, symbols.get(0).getInstrumentToken(), Trade.TradeStatus.OPEN);
+//                tradingService.saveTrade(peSymbol, TradingService.TRANSACTION_BUY, peOrderId, pePrice, symbols.get(1).getInstrumentToken(), Trade.TradeStatus.OPEN);
+                 log.info("Straddle placed: CE {} at {}, PE {} at {}", ceSymbol, cePrice, peSymbol, pePrice);
                 tradingService.subscribeToTokens(symbols);
                 getActivePositions();
+                tradingService.fetchAndUpdateTrades();
             }
         }
     }
@@ -87,7 +89,7 @@ public class BuyStraddleStrategy extends AbstractStrategy {
     }
 
     public void checkAndClosePositions(PriceTick tick) {
-        log.info("Checking positions for token: {}", tick.getInstrumentToken());
+//        log.info("Checking positions for token: {}", tick.getInstrumentToken());
         if (getActivePositions().isEmpty()) {
             return;
         }
@@ -99,8 +101,7 @@ public class BuyStraddleStrategy extends AbstractStrategy {
 
             BigDecimal currentPrice = BigDecimal.valueOf(tick.getLastTradedPrice());
             BigDecimal priceDiff = currentPrice.subtract(trade.getEntryPrice());
-            log.info("currentPrice : " + currentPrice);
-            log.info("priceDiff : " + priceDiff);
+            log.info("currentPrice : " + currentPrice +" | "+"priceDiff : " + priceDiff);
 
             if (shouldClosePosition(priceDiff)) {
                 log.info("Closing trade for symbol: {}", trade.getSymbol());

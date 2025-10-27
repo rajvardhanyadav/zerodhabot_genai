@@ -117,26 +117,30 @@
                                     <!-- This will be populated by the controller -->
                                     <option th:each="expiry : ${expiryDates}"
                                             th:value="${expiry}"
-                                            th:text="${#temporals.format(expiry, 'dd-MMM-yyyy')}">25-Dec-2024</option>
+                                            th:text="${#temporals.format(expiry, 'dd-MMM-yyyy')}">25-Dec-2024
+                                    </option>
                                 </select>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="mb-3">
                                 <label for="maxDailyLoss" class="form-label">Max Daily Loss</label>
-                                <input type="number" id="maxDailyLoss" class="form-control" value="3000" th:disabled="${tradingActive}">
+                                <input type="number" id="maxDailyLoss" class="form-control" value="3000"
+                                       th:disabled="${tradingActive}">
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="mb-3">
                                 <label for="profitTarget" class="form-label">Profit Target (Points)</label>
-                                <input type="number" id="profitTarget" class="form-control" value="30" th:disabled="${tradingActive}">
+                                <input type="number" id="profitTarget" class="form-control" value="30"
+                                       th:disabled="${tradingActive}">
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="mb-3">
                                 <label for="stopLoss" class="form-label">Stop Loss (Points)</label>
-                                <input type="number" id="stopLoss" class="form-control" value="15" th:disabled="${tradingActive}">
+                                <input type="number" id="stopLoss" class="form-control" value="15"
+                                       th:disabled="${tradingActive}">
                             </div>
                         </div>
                     </div>
@@ -179,7 +183,8 @@
                                 <td th:text="${trade.exitTimestamp}"></td>
                                 <td th:text="${trade.symbol}"></td>
                                 <td>
-                                            <span class="badge" th:class="${trade.type == 'BUY'} ? 'bg-success' : 'bg-danger'"
+                                            <span class="badge"
+                                                  th:class="${trade.type == 'BUY'} ? 'bg-success' : 'bg-danger'"
                                                   th:text="${trade.type}"></span>
                                 </td>
                                 <td th:text="${trade.quantity}"></td>
@@ -188,7 +193,8 @@
                                 <td th:class="${trade.pnl >= 0} ? 'pnl-positive' : 'pnl-negative'"
                                     th:text="${trade.pnl}"></td>
                                 <td>
-                                            <span class="badge" th:class="${trade.status == 'OPEN'} ? 'bg-warning' : 'bg-success'"
+                                            <span class="badge"
+                                                  th:class="${trade.status == 'OPEN'} ? 'bg-warning' : 'bg-success'"
                                                   th:text="${trade.status}"></span>
                                 </td>
                             </tr>
@@ -199,29 +205,138 @@
             </div>
         </div>
     </div>
+
+    <!-- html -->
+    <!-- Orders -->
+    <div class="row mt-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Orders</h5>
+                    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Trading Symbol</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr th:each="o : ${orders}">
+                                <td th:text="${o.order_id != null ? o.order_id : o['order_id']}">-</td>
+                                <td th:text="${o.tradingsymbol != null ? o.tradingsymbol : o['tradingsymbol']}">-</td>
+                                <td th:text="${o.transaction_type != null ? o.transaction_type : o['transaction_type']}">
+                                    -
+                                </td>
+                                <td th:text="${o.quantity != null ? o.quantity : o['quantity']}">-</td>
+                                <td th:text="${o.price != null ? o.price : o['price']}">-</td>
+                                <td th:text="${o.status != null ? o.status : o['status']}">-</td>
+<!--                                <td th:text="${o.created_at != null ? o.created_at : (o['order_timestamp'] != null ? o['order_timestamp'] : '-')}">-->
+<!--                                    - -->
+<!--                                </td>-->
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(orders)}">
+                                <td colspan="7">No orders found</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Positions -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">Day Positions</h5></div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                            <tr>
+                                <th>Trading Symbol</th>
+                                <th>Qty</th>
+                                <th>Avg Price</th>
+                                <th>Last Price</th>
+                                <th>P&L</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr th:each="p : ${dayPositions}">
+                                <td th:text="${p.tradingsymbol != null ? p.tradingsymbol : p['tradingsymbol']}">-</td>
+                                <td th:text="${p.quantity != null ? p.quantity : p['quantity']}">0</td>
+                                <td th:text="${p.average_price != null ? p.average_price : p['average_price']}">0.00
+                                </td>
+                                <td th:text="${p.last_price != null ? p.last_price : p['last_price']}">0.00</td>
+                                <td th:text="${p.pnl != null ? p.pnl : p['pnl']}"
+                                    th:class="${(p.pnl != null ? p.pnl : 0) >= 0 ? 'pnl-positive' : 'pnl-negative' }">
+                                    0.00
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(dayPositions)}">
+                                <td colspan="5">No day positions</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">Net Positions</h5></div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                            <tr>
+                                <th>Trading Symbol</th>
+                                <th>Qty</th>
+                                <th>Avg Price</th>
+                                <th>Last Price</th>
+                                <th>P&L</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr th:each="p : ${netPositions}">
+                                <td th:text="${p.tradingsymbol != null ? p.tradingsymbol : p['tradingsymbol']}">-</td>
+                                <td th:text="${p.quantity != null ? p.quantity : p['quantity']}">0</td>
+                                <td th:text="${p.average_price != null ? p.average_price : p['average_price']}">0.00
+                                </td>
+                                <td th:text="${p.last_price != null ? p.last_price : p['last_price']}">0.00</td>
+                                <td th:text="${p.pnl != null ? p.pnl : p['pnl']}"
+                                    th:class="${(p.pnl != null ? p.pnl : 0) >= 0 ? 'pnl-positive' : 'pnl-negative' }">
+                                    0.00
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(netPositions)}">
+                                <td colspan="5">No net positions</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://kit.fontawesome.com/a076d05399.js"></script>
 <script>
     let stompClient = null;
-
-    function connect() {
-        const socket = new SockJS('/ws');
-        stompClient = Stomp.over(socket);
-        stompClient.connect({}, function (frame) {
-            console.log('Connected: ' + frame);
-
-            stompClient.subscribe('/topic/trades', function (message) {
-                showNotification('Trade Update', message.body);
-                refreshTrades();
-            });
-
-            stompClient.subscribe('/topic/pnl', function (pnlData) {
-                updatePnLDisplay(JSON.parse(pnlData.body));
-            });
-        });
-    }
 
     function startTrading() {
         const config = {
@@ -276,11 +391,6 @@
             pnlElement.className = pnlData.totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
         }
     }
-
-    // Connect to WebSocket on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        connect();
-    });
 </script>
 </body>
 </html>

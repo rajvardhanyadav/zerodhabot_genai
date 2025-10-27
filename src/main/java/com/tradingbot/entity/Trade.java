@@ -68,6 +68,15 @@ public final class Trade {
     /** The instrument token of the traded instrument. */
     private String instrumentToken;
 
+    public Trade(String symbol, String transactionType, int i, BigDecimal price, String strategyStraddle, TradeStatus status) {
+        this.symbol = symbol;
+        this.type = TradeType.valueOf(transactionType);
+        this.quantity = i;
+        this.entryPrice = price;
+        this.strategy = strategyStraddle;
+        this.status = status;
+    }
+
     /** Enum representing the type of trade. */
     public enum TradeType {
         BUY, SELL
@@ -75,7 +84,7 @@ public final class Trade {
 
     /** Enum representing the status of the trade. */
     public enum TradeStatus {
-        OPEN, CLOSED
+        OPEN, COMPLETE, REJECTED, CANCELLED, PENDING, TRIGGER_PENDING
     }
 
     public Trade(String symbol, String type, int quantity, BigDecimal entryPrice, String strategy) {

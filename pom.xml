@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.tradingbot</groupId>
     <artifactId>kitetradingbot</artifactId>
-    <version>1</version>
+    <version>1.1</version>
     <name>kite-trading-bot</name>
     <description>Trading Bot using Zerodha Kite API</description>
     <properties>
@@ -72,6 +72,7 @@
         </dependency>
     </dependencies>
     <build>
+<!--        <finalName>kitezerodhabot</finalName>-->
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

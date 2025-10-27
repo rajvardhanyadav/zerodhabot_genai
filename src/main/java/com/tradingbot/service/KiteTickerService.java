@@ -2,11 +2,13 @@ package com.tradingbot.service;
 
      import com.tradingbot.dto.PriceTick;
      import com.tradingbot.event.PriceTickEvent;
+     import com.zerodhatech.models.Order;
      import com.zerodhatech.models.Tick;
      import com.zerodhatech.ticker.KiteTicker;
      import jakarta.annotation.PreDestroy;
      import lombok.extern.slf4j.Slf4j;
      import org.springframework.beans.factory.annotation.Autowired;
+     import org.springframework.context.ApplicationEvent;
      import org.springframework.context.ApplicationEventPublisher;
      import org.springframework.stereotype.Service;
 
@@ -49,13 +51,19 @@ package com.tradingbot.service;
              log.info(INITIALIZING_CONNECTION);
              kiteTicker = new KiteTicker(accessToken, apiKey);
 
-             kiteTicker.setOnConnectedListener(() -> handleConnectionEstablished());
-             kiteTicker.setOnDisconnectedListener(() -> handleDisconnection());
+             kiteTicker.setOnConnectedListener(this::handleConnectionEstablished);
+             kiteTicker.setOnDisconnectedListener(this::handleDisconnection);
              kiteTicker.setOnTickerArrivalListener(this::processTicks);
-
+             kiteTicker.setOnOrderUpdateListener(this::processOrderUpdates);
              kiteTicker.setTryReconnection(true);
              kiteTicker.connect();
          }
+
+         private void processOrderUpdates(Order order) {
+//                log.info("Order Update Received: {}", order.status);
+                eventPublisher.publishEvent(order);
+         }
+
 
          private void handleConnectionEstablished() {
              log.info(WEBSOCKET_CONNECTED);
@@ -77,12 +85,12 @@ package com.tradingbot.service;
              if (ticks.isEmpty()) {
                  return;
              }
-             log.info("processTicks() called with {} ticks", ticks.size());
-             for (Tick tick : ticks) {
-                 log.info(tick.getInstrumentToken()+" "+tick.getLastTradedPrice());
-                 PriceTick priceTick = new PriceTick(tick.getInstrumentToken(), tick.getLastTradedPrice());
-                 eventPublisher.publishEvent(new PriceTickEvent(this, priceTick));
-             }
+//             log.info("processTicks() called with {} ticks", ticks.size());
+//             for (Tick tick : ticks) {
+//                 log.info(tick.getInstrumentToken()+" "+tick.getLastTradedPrice());
+//                 PriceTick priceTick = new PriceTick(tick.getInstrumentToken(), tick.getLastTradedPrice());
+//                 eventPublisher.publishEvent(new PriceTickEvent(this, priceTick));
+//             }
          }
 
          /**
@@ -106,18 +114,24 @@ package com.tradingbot.service;
 
          /**
           * Unsubscribes from a list of instrument tokens.
-          * @param tokens A list of instrument tokens to unsubscribe from.
           */
-         public void unsubscribe(List<Long> tokens) {
-             Optional.ofNullable(tokens).filter(t -> !t.isEmpty()).ifPresent(validTokens -> {
+         public void unsubscribe() {
+             if (isConnected.get() && kiteTicker != null) {
+                 log.info(UNSUBSCRIBING_TOKENS);
+                 ArrayList<Long> tokens = new ArrayList<>(subscribedTokens);
+                 kiteTicker.unsubscribe(tokens);
+                 subscribedTokens.clear();
+             }
+             /*Optional.ofNullable(tokens).filter(t -> !t.isEmpty()).ifPresent(validTokens -> {
                  log.info("Request to unsubscribe from tokens: {}", validTokens);
                  subscribedTokens.removeAll(validTokens);
 
                  if (isConnected.get() && kiteTicker != null) {
                      log.info(UNSUBSCRIBING_TOKENS);
-                     kiteTicker.unsubscribe(new ArrayList<>(validTokens));
+                     kiteTicker.unsubscribe((ArrayList<Long>) subscribedTokens);
+                     subscribedTokens.clear();
                  }
-             });
+             });*/
          }
 
          /**

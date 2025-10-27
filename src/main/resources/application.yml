@@ -26,10 +26,10 @@ kite:
 trading:
   strategy:
     max-daily-loss: 3000
-    profit-target: 25
-    stop-loss: 15
+    profit-target: 3
+    stop-loss: 3
     interval-minutes: 5
     trading-start: "09:15"
     trading-end: "15:30"
   paper:
-    enabled: true
+    enabled: false

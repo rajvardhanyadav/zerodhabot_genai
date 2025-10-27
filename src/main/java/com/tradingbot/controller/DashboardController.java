@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Controller
@@ -74,6 +75,12 @@ public class DashboardController {
 
         List<Trade> recentTrades = tradeRepository.findAll();
         List<LocalDate> expiryDates = kiteService.getUpcomingExpiryDates(UPCOMING_EXPIRY_COUNT);
+        List<Map<String, Object>> orders = kiteService.fetchOrders();
+        Map<String, List<Map<String, Object>>> positions = kiteService.fetchPositions();
+
+        model.addAttribute("orders", orders != null ? orders : List.of());
+        model.addAttribute("dayPositions", positions != null ? positions.getOrDefault("day", List.of()) : List.of());
+        model.addAttribute("netPositions", positions != null ? positions.getOrDefault("net", List.of()) : List.of());
 
         model.addAttribute("accountInfo", accountInfo);
         model.addAttribute("recentTrades", recentTrades);
